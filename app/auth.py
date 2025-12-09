@@ -32,7 +32,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 class TokenData(BaseModel):
-    sub: Optional[str] = None  # user id as string
+    # user id as string (subject)
+    sub: Optional[str] = None
 
 
 # --------------------------------------------------------------------
@@ -70,7 +71,7 @@ def create_access_token(
     return encoded_jwt
 
 
-def create_access_token_for_user(user: models.User) -> str:
+def create_access_token_for_user(user: models.ADPUser) -> str:
     """
     Convenience helper: create a token for a given user.
     Encodes the user_id as the `sub` (subject) claim.
@@ -83,18 +84,19 @@ def create_access_token_for_user(user: models.User) -> str:
 # --------------------------------------------------------------------
 
 def get_user_by_identifier(
-    db: Session, identifier: str
-) -> Optional[models.User]:
+    db: Session,
+    identifier: str,
+) -> Optional[models.ADPUser]:
     """
     Fetch a user either by email or username.
     `identifier` is whatever the user typed in the login form.
     """
     return (
-        db.query(models.User)
+        db.query(models.ADPUser)
         .filter(
             or_(
-                models.User.email == identifier,
-            #   models.User.username == identifier,  # enable if you have username column
+                models.ADPUser.email == identifier,
+                models.ADPUser.username == identifier,
             )
         )
         .first()
@@ -102,18 +104,18 @@ def get_user_by_identifier(
 
 
 def authenticate_user(
-    db: Session, identifier: str, password: str
-) -> Optional[models.User]:
+    db: Session,
+    identifier: str,
+    password: str,
+) -> Optional[models.ADPUser]:
     """
     Return user if credentials are valid, otherwise None.
     """
     user = get_user_by_identifier(db, identifier)
     if not user:
         return None
-
     if not verify_password(password, user.password_hash):
         return None
-
     return user
 
 
@@ -124,7 +126,7 @@ def authenticate_user(
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-) -> models.User:
+) -> models.ADPUser:
     """
     Decode the JWT, fetch the user from DB and return it.
     Used as a dependency in routes that require authentication.
@@ -144,7 +146,8 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = db.query(models.User).get(int(token_data.sub))
+    # Load the user from the DB based on user_id in `sub`
+    user = db.query(models.ADPUser).get(int(token_data.sub))
     if user is None:
         raise credentials_exception
 
