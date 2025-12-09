@@ -1,61 +1,73 @@
-# app/deps.py
-
+from datetime import datetime, timedelta
+from typing import List
+import bcrypt
 from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from .config import settings
 from .database import get_db
-from .auth import get_current_user, get_user_roles, decode_token
-from .models import ADPUser, ADPAccount
-from fastapi.security import OAuth2PasswordBearer
+from .models import ADPUser, ADPUserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def get_current_user_roles(
-    db: Session = Depends(get_db),
-    user: ADPUser = Depends(get_current_user)
-) -> list[str]:
-    """Get the roles for the current user."""
-    return get_user_roles(db, user.user_id)
+def hash_password(password: str) -> str:
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
+
+
+def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> ADPUser:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = db.query(ADPUser).filter(ADPUser.user_id == int(user_id)).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+def get_user_roles(user: ADPUser, db: Session) -> List[str]:
+    user_roles = db.query(ADPUserRole).filter(ADPUserRole.user_id == user.user_id).all()
+    return [ur.role_code for ur in user_roles]
 
 
 def require_admin(
     user: ADPUser = Depends(get_current_user),
-    roles: list[str] = Depends(get_current_user_roles),
+    db: Session = Depends(get_db)
 ) -> ADPUser:
-    """Dependency that requires ADMIN or EMPLOYEE role."""
-    if "ADMIN" not in roles and "EMPLOYEE" not in roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/employee privileges required"
-        )
+    roles = get_user_roles(user, db)
+    if "ADMIN" not in roles:
+        raise HTTPException(status_code=403, detail="Admin access required")
     return user
-
-
-def require_role(required_roles: list[str]):
-    """Factory to create a dependency that requires specific roles."""
-    def checker(
-        user: ADPUser = Depends(get_current_user),
-        roles: list[str] = Depends(get_current_user_roles),
-    ) -> ADPUser:
-        if not any(r in roles for r in required_roles):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"One of these roles required: {', '.join(required_roles)}"
-            )
-        return user
-    return checker
-
-
-def get_current_account(
-    db: Session = Depends(get_db),
-    user: ADPUser = Depends(get_current_user)
-) -> ADPAccount:
-    """Get the account linked to the current user."""
-    account = db.query(ADPAccount).filter(ADPAccount.adp_user_user_id == user.user_id).first()
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No account linked to this user. Please create an account first."
-        )
-    return account

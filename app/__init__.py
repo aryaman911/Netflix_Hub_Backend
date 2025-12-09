@@ -1,1 +1,1 @@
-# app/__init__.py
+# Netflix Hub Backend

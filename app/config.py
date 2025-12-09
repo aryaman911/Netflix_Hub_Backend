@@ -1,21 +1,13 @@
-# app/config.py
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
+import os
+from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    # Database
-    DATABASE_URL: str
-
-    # JWT settings
-    SECRET_KEY: str = "super-secret-change-me-in-production"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
-    # Password reset token expiry (in hours)
-    PASSWORD_RESET_EXPIRE_HOURS: int = 24
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
-
+    class Config:
+        env_file = ".env"
 
 settings = Settings()
