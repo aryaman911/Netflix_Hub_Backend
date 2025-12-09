@@ -4,13 +4,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from app.routers import auth, series, admin, feedback
+from app.routers import auth, series
 
 
 # -------------------------------------
 # Database Initialization
 # -------------------------------------
-# Creates all tables at startup if they do not exist
 Base.metadata.create_all(bind=engine)
 
 
@@ -20,17 +19,17 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Netflix Hub API",
     version="1.0.0",
-    description="Backend API for Netflix Hub (Movie Streaming App)"
+    description="Backend API for Netflix Hub (Movie Streaming App)",
 )
 
 
 # -------------------------------------
 # CORS Configuration
 # -------------------------------------
-# GitHub Pages frontend must be allowed!
 origins = [
-    "https://aryaman911.github.io",   # your GitHub Pages site
-    "http://localhost:5500",          # local testing
+    "https://aryaman911.github.io",   # your GitHub Pages root
+    "https://aryaman911.github.io/Netflix_Hub",  # repo pages
+    "http://localhost:5500",          # local file-server testing
     "http://127.0.0.1:5500",
     "http://localhost:8000",
 ]
@@ -57,8 +56,6 @@ def health_check():
 # -------------------------------------
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(series.router, prefix="/series", tags=["series"])
-app.include_router(admin.router, prefix="/admin", tags=["admin"])
-app.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
 
 
 # -------------------------------------
