@@ -1,5 +1,27 @@
 # app/routers/__init__.py
 
-from . import auth, series, episodes, feedback, watchlist
+from . import (
+    auth,
+    users,
+    accounts,
+    series,
+    episodes,
+    feedback,
+    watchlist,
+    reference,
+    schedules,
+    production,
+)
 
-__all__ = ["auth", "series", "episodes", "feedback", "watchlist"]
+__all__ = [
+    "auth",
+    "users",
+    "accounts",
+    "series",
+    "episodes",
+    "feedback",
+    "watchlist",
+    "reference",
+    "schedules",
+    "production",
+]

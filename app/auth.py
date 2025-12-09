@@ -7,34 +7,26 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app import models
 from app.database import get_db
-from app.config import settings  # FIXED: use settings from config.py
+from app.config import settings
+from app.schemas import TokenData
+
 
 # --------------------------------------------------------------------
-# JWT / security configuration - FIXED: use settings object
+# Password hashing
 # --------------------------------------------------------------------
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# This must match the login route (POST /auth/login)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-class TokenData(BaseModel):
-    user_id: int  # FIXED: store user_id directly
-
-
-# --------------------------------------------------------------------
-# Password helpers
-# --------------------------------------------------------------------
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Return True if `plain_password` matches `hashed_password`."""
+    """Return True if password matches hash."""
     if not hashed_password:
         return False
     return pwd_context.verify(plain_password, hashed_password)
@@ -49,38 +41,18 @@ def get_password_hash(password: str) -> str:
 # JWT helpers
 # --------------------------------------------------------------------
 
-def create_access_token(
-    data: dict,
-    expires_delta: Optional[timedelta] = None,
-) -> str:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a signed JWT access token."""
     to_encode = data.copy()
     expire = datetime.utcnow() + (
-        expires_delta
-        if expires_delta is not None
-        else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
-
-
-def create_access_token_for_user(user: models.ADPUser, roles: list[str] = None) -> str:
-    """
-    Convenience helper: create a token for a given user.
-    Encodes the user_id and roles in the token.
-    """
-    return create_access_token({
-        "sub": str(user.user_id),
-        "roles": roles or []
-    })
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def decode_token(token: str) -> TokenData:
-    """
-    Decode a JWT and return TokenData.
-    Raises ValueError if token is invalid.
-    """
+    """Decode a JWT and return TokenData. Raises ValueError if invalid."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         sub = payload.get("sub")
@@ -92,17 +64,11 @@ def decode_token(token: str) -> TokenData:
 
 
 # --------------------------------------------------------------------
-# User lookup / authentication
+# User lookup
 # --------------------------------------------------------------------
 
-def get_user_by_identifier(
-    db: Session,
-    identifier: str,
-) -> Optional[models.ADPUser]:
-    """
-    Fetch a user either by email or username.
-    `identifier` is whatever the user typed in the login form.
-    """
+def get_user_by_identifier(db: Session, identifier: str) -> Optional[models.ADPUser]:
+    """Fetch a user by email or username."""
     return (
         db.query(models.ADPUser)
         .filter(
@@ -115,14 +81,8 @@ def get_user_by_identifier(
     )
 
 
-def authenticate_user(
-    db: Session,
-    identifier: str,
-    password: str,
-) -> Optional[models.ADPUser]:
-    """
-    Return user if credentials are valid, otherwise None.
-    """
+def authenticate_user(db: Session, identifier: str, password: str) -> Optional[models.ADPUser]:
+    """Return user if credentials are valid, otherwise None."""
     user = get_user_by_identifier(db, identifier)
     if not user:
         return None
@@ -131,30 +91,38 @@ def authenticate_user(
     return user
 
 
+def get_user_roles(db: Session, user_id: int) -> list[str]:
+    """Get role codes for a user."""
+    roles = (
+        db.query(models.ADPUserRole, models.ADPRole)
+        .join(models.ADPRole, models.ADPRole.role_code == models.ADPUserRole.role_code)
+        .filter(models.ADPUserRole.user_id == user_id)
+        .all()
+    )
+    return [r.ADPRole.role_code for r in roles]
+
+
 # --------------------------------------------------------------------
-# Dependencies for protected routes
+# Dependencies
 # --------------------------------------------------------------------
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> models.ADPUser:
-    """
-    Decode the JWT, fetch the user from DB and return it.
-    Used as a dependency in routes that require authentication.
-    """
+    """Get the current authenticated user from JWT token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
+    
     try:
         token_data = decode_token(token)
     except ValueError:
         raise credentials_exception
 
     user = db.query(models.ADPUser).filter(models.ADPUser.user_id == token_data.user_id).first()
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_exception
     return user
