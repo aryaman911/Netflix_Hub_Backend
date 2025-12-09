@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from passlib.hash import bcrypt
+import bcrypt
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -18,13 +18,20 @@ router = APIRouter()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return bcrypt.verify(plain_password, hashed_password)
+    """Verify a password against its hash using bcrypt directly."""
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password."""
-    return bcrypt.hash(password)
+    """Hash a password using bcrypt directly."""
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -145,9 +152,12 @@ def login(
         expires_delta=timedelta(minutes=1440),  # 24 hours
     )
     
-    # Update last login
-    user.last_login_at = func.now()
-    db.commit()
+    # Update last login (ignore errors)
+    try:
+        user.last_login_at = func.now()
+        db.commit()
+    except Exception:
+        db.rollback()
     
     return TokenWithUser(
         access_token=access_token,
