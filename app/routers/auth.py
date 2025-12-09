@@ -1,116 +1,108 @@
-from datetime import date
-from typing import List
+# app/routers/auth.py
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
+from app import models
 from app.database import get_db
-from app.models import ADPUser, ADPUserRole, ADPRole, ADPAccount
-from app.schemas import UserCreate, User, Token
-from app.auth import hash_password, verify_password, create_access_token
+from app.schemas import UserCreate, UserRead, Token
+from app.config import settings
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter()
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-@router.post("/register", response_model=User)
-def register_user(payload: UserCreate, db: Session = Depends(get_db)):
-    # check email / username availability
-    if db.query(ADPUser).filter(ADPUser.email == payload.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
+# -------------------------------------------------------------------
+# Helpers
+# -------------------------------------------------------------------
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
-    if db.query(ADPUser).filter(ADPUser.username == payload.username).first():
-        raise HTTPException(status_code=400, detail="Username already taken")
 
-    user = ADPUser(
-        email=payload.email,
-        username=payload.username,
-        password_hash=hash_password(payload.password),
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=30))
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(
+        to_encode,
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+    return encoded_jwt
+
+
+def get_user_by_email_or_username(db: Session, identifier: str) -> models.User | None:
+    return (
+        db.query(models.User)
+        .filter(
+            (models.User.email == identifier)
+            | (models.User.username == identifier)
+        )
+        .first()
+    )
+
+
+# -------------------------------------------------------------------
+# Routes
+# -------------------------------------------------------------------
+
+@router.post("/signup", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def signup(user_in: UserCreate, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+    """
+    # unique email/username check
+    existing = (
+        db.query(models.User)
+        .filter(
+            (models.User.email == user_in.email)
+            | (models.User.username == user_in.username)
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email or username already registered.",
+        )
+
+    db_user = models.User(
+        username=user_in.username,
+        email=user_in.email,
+        password_hash=get_password_hash(user_in.password),
         is_active=True,
     )
-    db.add(user)
-    db.flush()  # get user_id
-
-    # Ensure USER role exists
-    user_role_code = "USER"
-    role = db.query(ADPRole).filter(ADPRole.role_code == user_role_code).first()
-    if not role:
-        role = ADPRole(role_code=user_role_code, role_name="Standard user")
-        db.add(role)
-        db.flush()
-
-    user_role = ADPUserRole(user_id=user.user_id, role_code=user_role_code)
-    db.add(user_role)
-
-    # Create an ADPAccount for this user (dummy address data)
-    # NOTE: account_id must be generated; if your DB has identity, it will auto-generate.
-    # If not, we use max+1 as a simple approach.
-    max_account_id = db.query(func.max(ADPAccount.account_id)).scalar()
-    next_account_id = (max_account_id or 0) + 1
-
-    account = ADPAccount(
-        account_id=next_account_id,
-        first_name=payload.first_name,
-        last_name=payload.last_name,
-        address_line1="Unknown",
-        city="Unknown",
-        state_province="Unknown",
-        postal_code="00000",
-        opened_date=date.today(),
-        monthly_service_fee=0,
-        adp_country_country_code="US",  # assume US exists in adp_country
-        adp_user_user_id=user.user_id,
-    )
-    db.add(account)
-
+    db.add(db_user)
     db.commit()
-    db.refresh(user)
-
-    roles = [user_role_code]
-    return User(
-        user_id=user.user_id,
-        email=user.email,
-        username=user.username,
-        is_active=user.is_active,
-        roles=roles,
-    )
+    db.refresh(db_user)
+    return db_user
 
 
 @router.post("/login", response_model=Token)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
-):
-    # OAuth2PasswordRequestForm has: username, password
-    user = db.query(ADPUser).filter(ADPUser.username == form_data.username).first()
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    Login with either email or username as `username` field + password.
+    Frontend sends:
+        { username: "<email or username>", password: "..." }
+    """
+    user = get_user_by_email_or_username(db, form_data.username)
     if not user or not verify_password(form_data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email/username or password",
+        )
 
-    # load roles
-    roles = (
-        db.query(ADPUserRole.role_code)
-        .filter(ADPUserRole.user_id == user.user_id)
-        .all()
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.user_id)}, expires_delta=access_token_expires
     )
-    role_codes = [r.role_code for r in roles]
-
-    access_token = create_access_token(user_id=user.user_id, roles=role_codes)
-    return Token(access_token=access_token)
-
-
-@router.get("/me", response_model=User)
-def get_me(db: Session = Depends(get_db), token: Token = Depends()):
-    # This is a bit redundant; typically you'd use the get_current_user dep,
-    # but your frontend might just want a quick “who am I”.
-    from app.deps import get_current_user, get_current_user_roles
-
-    user = get_current_user(db=db, token=token.access_token)  # type: ignore
-    roles = get_current_user_roles(db=db, user=user)  # type: ignore
-
-    return User(
-        user_id=user.user_id,
-        email=user.email,
-        username=user.username,
-        is_active=user.is_active,
-        roles=roles,
-    )
+    return Token(access_token=access_token, token_type="bearer")
