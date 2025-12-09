@@ -3,101 +3,65 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine
-from app.routers import (
-    auth,
-    series,
-    episodes,
-    feedback,
-    watchlist,
-    users,
-    accounts,
-    reference,
-    schedules,
-    production,
-)
+from app.routers import auth, series, episodes, feedback, watchlist, reference
 
+# ============================================================================
+# APP CONFIGURATION
+# ============================================================================
 
-# -------------------------------------
-# Database Initialization
-# -------------------------------------
-# Note: In production, use Alembic migrations instead
-Base.metadata.create_all(bind=engine)
-
-
-# -------------------------------------
-# FastAPI App Config
-# -------------------------------------
 app = FastAPI(
     title="Netflix Hub API",
     version="2.0.0",
-    description="Complete Backend API for Netflix Hub (Movie Streaming App)",
+    description="Backend API for Netflix Hub (Movie Streaming Platform)",
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
-
-# -------------------------------------
-# CORS Configuration
-# -------------------------------------
-origins = [
-    "https://aryaman911.github.io",
-    "https://aryaman911.github.io/Netflix_Hub",
-    "http://localhost:5500",
-    "http://127.0.0.1:5500",
-    "http://localhost:8000",
-    "http://localhost:3000",
-]
+# ============================================================================
+# CORS CONFIGURATION - ALLOW ALL ORIGINS FOR DEMO
+# ============================================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Allow all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
 )
 
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
 
-# -------------------------------------
-# Health Check Endpoint
-# -------------------------------------
 @app.get("/health", tags=["system"])
 def health_check():
+    """Health check endpoint."""
     return {"status": "ok", "version": "2.0.0"}
 
 
-# -------------------------------------
-# Register Routers
-# -------------------------------------
-
-# Auth & Users
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(users.router, prefix="/users", tags=["users"])
-app.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
-
-# Content
-app.include_router(series.router, prefix="/series", tags=["series"])
-app.include_router(episodes.router, prefix="/episodes", tags=["episodes"])
-app.include_router(feedback.router, tags=["feedback"])
-app.include_router(watchlist.router, prefix="/me/watchlist", tags=["watchlist"])
-
-# Reference Data
-app.include_router(reference.router, prefix="/reference", tags=["reference"])
-
-# Scheduling
-app.include_router(schedules.router, prefix="/schedules", tags=["schedules"])
-
-# Production Management
-app.include_router(production.router, prefix="/production", tags=["production"])
-
-
-# -------------------------------------
-# Root Endpoint
-# -------------------------------------
 @app.get("/", tags=["system"])
 def root():
+    """Root endpoint."""
     return {
         "message": "Netflix Hub API is running",
         "version": "2.0.0",
         "docs": "/docs",
     }
+
+# ============================================================================
+# REGISTER ROUTERS
+# ============================================================================
+
+# Auth
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
+
+# Content
+app.include_router(series.router, prefix="/series", tags=["series"])
+app.include_router(episodes.router, prefix="/episodes", tags=["episodes"])
+app.include_router(feedback.router, tags=["feedback"])
+
+# User Activity
+app.include_router(watchlist.router, prefix="/me/watchlist", tags=["watchlist"])
+
+# Reference Data
+app.include_router(reference.router, prefix="/reference", tags=["reference"])
