@@ -6,29 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ADPWatchlist, ADPAccount, ADPSeries, ADPUser
+from app.models import ADPWatchlist, ADPAccount, ADPSeries
 from app.schemas import WatchlistItem
-from app.deps import get_current_user
+from app.deps import get_current_account
 
 router = APIRouter()
 
 
-def _get_account_for_user(db: Session, user_id: int) -> ADPAccount:
-    """Get the account linked to a user."""
-    account = db.query(ADPAccount).filter(ADPAccount.adp_user_user_id == user_id).first()
-    if not account:
-        raise HTTPException(status_code=400, detail="No account linked to this user")
-    return account
-
+# -------------------------------------------------------------------------
+# GET WATCHLIST
+# -------------------------------------------------------------------------
 
 @router.get("/", response_model=List[WatchlistItem])
 def get_watchlist(
     db: Session = Depends(get_db),
-    user: ADPUser = Depends(get_current_user),
+    account: ADPAccount = Depends(get_current_account),
 ):
     """Get the current user's watchlist."""
-    account = _get_account_for_user(db, user.user_id)
-    
     rows = (
         db.query(ADPWatchlist, ADPSeries)
         .join(ADPSeries, ADPSeries.series_id == ADPWatchlist.adp_series_series_id)
@@ -36,7 +30,7 @@ def get_watchlist(
         .order_by(ADPWatchlist.added_at.desc())
         .all()
     )
-    
+
     return [
         WatchlistItem(
             series_id=series.series_id,
@@ -48,20 +42,22 @@ def get_watchlist(
     ]
 
 
+# -------------------------------------------------------------------------
+# ADD TO WATCHLIST
+# -------------------------------------------------------------------------
+
 @router.post("/{series_id}", status_code=status.HTTP_204_NO_CONTENT)
 def add_to_watchlist(
     series_id: int,
     db: Session = Depends(get_db),
-    user: ADPUser = Depends(get_current_user),
+    account: ADPAccount = Depends(get_current_account),
 ):
-    """Add a series to the user's watchlist."""
-    account = _get_account_for_user(db, user.user_id)
-    
+    """Add a series to the watchlist."""
     series = db.query(ADPSeries).filter(ADPSeries.series_id == series_id).first()
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
-    
-    # Check if already in watchlist
+
+    # Check if already on watchlist
     existing = (
         db.query(ADPWatchlist)
         .filter(
@@ -70,10 +66,9 @@ def add_to_watchlist(
         )
         .first()
     )
-    
     if existing:
-        return  # Already in watchlist, silently succeed
-    
+        return  # Already on watchlist
+
     wl = ADPWatchlist(
         adp_account_account_id=account.account_id,
         adp_series_series_id=series_id,
@@ -82,16 +77,18 @@ def add_to_watchlist(
     db.commit()
 
 
+# -------------------------------------------------------------------------
+# REMOVE FROM WATCHLIST
+# -------------------------------------------------------------------------
+
 @router.delete("/{series_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_from_watchlist(
     series_id: int,
     db: Session = Depends(get_db),
-    user: ADPUser = Depends(get_current_user),
+    account: ADPAccount = Depends(get_current_account),
 ):
-    """Remove a series from the user's watchlist."""
-    account = _get_account_for_user(db, user.user_id)
-    
-    existing = (
+    """Remove a series from the watchlist."""
+    wl = (
         db.query(ADPWatchlist)
         .filter(
             ADPWatchlist.adp_account_account_id == account.account_id,
@@ -99,9 +96,32 @@ def remove_from_watchlist(
         )
         .first()
     )
-    
-    if not existing:
-        raise HTTPException(status_code=404, detail="Not in watchlist")
-    
-    db.delete(existing)
+
+    if not wl:
+        raise HTTPException(status_code=404, detail="Not on watchlist")
+
+    db.delete(wl)
     db.commit()
+
+
+# -------------------------------------------------------------------------
+# CHECK IF ON WATCHLIST
+# -------------------------------------------------------------------------
+
+@router.get("/{series_id}/check")
+def check_watchlist(
+    series_id: int,
+    db: Session = Depends(get_db),
+    account: ADPAccount = Depends(get_current_account),
+):
+    """Check if a series is on the user's watchlist."""
+    exists = (
+        db.query(ADPWatchlist)
+        .filter(
+            ADPWatchlist.adp_account_account_id == account.account_id,
+            ADPWatchlist.adp_series_series_id == series_id,
+        )
+        .first()
+    ) is not None
+
+    return {"on_watchlist": exists}

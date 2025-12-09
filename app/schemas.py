@@ -2,38 +2,42 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, ConfigDict
 
 
-# ============================================================================
-# AUTH SCHEMAS
-# ============================================================================
+# ===========================================================================
+# BASE CONFIG
+# ===========================================================================
+
+class ORMModel(BaseModel):
+    """Base model configured to read data from SQLAlchemy objects."""
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===========================================================================
+# USER / AUTH SCHEMAS
+# ===========================================================================
 
 class UserBase(BaseModel):
     email: EmailStr
-    username: str = Field(..., min_length=3, max_length=50)
+    username: str
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6)
-    # Account fields
-    first_name: str = Field(..., min_length=1, max_length=50)
-    last_name: str = Field(..., min_length=1, max_length=50)
-    address_line1: str = Field(..., min_length=1, max_length=255)
-    city: str = Field(..., min_length=1, max_length=100)
-    state_province: str = Field(..., min_length=1, max_length=100)
-    postal_code: str = Field(..., min_length=1, max_length=20)
-    country_code: str = Field(..., min_length=2, max_length=3)
+    password: str
 
 
-class UserResponse(UserBase):
-    user_id: int
-    is_active: bool
-    roles: List[str] = []
+class UserRead(UserBase):
+    id: int
+    is_active: bool = True
 
-    class Config:
-        from_attributes = True
+
+class UserLogin(BaseModel):
+    identifier: str  # email or username
+    password: str
 
 
 class Token(BaseModel):
@@ -43,112 +47,263 @@ class Token(BaseModel):
 
 class TokenWithUser(Token):
     user_id: int
-    username: str
-    email: str
-    roles: List[str]
+    roles: List[str] = []
 
 
-class LoginRequest(BaseModel):
-    username: str  # Can be email or username
-    password: str
+class TokenData(BaseModel):
+    user_id: int
 
 
-# ============================================================================
-# SERIES SCHEMAS
-# ============================================================================
+# Password Reset
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
 
-class Episode(BaseModel):
-    episode_id: int
+
+class PasswordResetConfirm(BaseModel):
+    token: UUID
+    new_password: str
+
+
+class PasswordResetResponse(BaseModel):
+    message: str
+
+
+# Login Audit
+class LoginAuditItem(ORMModel):
+    audit_id: int
+    user_id: int
+    login_time: datetime
+    success: bool
+    client_ip: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+# ===========================================================================
+# ROLE SCHEMAS
+# ===========================================================================
+
+class RoleRead(ORMModel):
+    role_code: str
+    role_name: str
+
+
+class UserRoleAssign(BaseModel):
+    user_id: int
+    role_code: str
+
+
+# ===========================================================================
+# EMPLOYEE SCHEMAS
+# ===========================================================================
+
+class EmployeeBase(BaseModel):
+    first_name: str
+    last_name: str
+    job_title: Optional[str] = None
+    is_manager: bool = False
+
+
+class EmployeeCreate(EmployeeBase):
+    user_id: int
+    hired_date: Optional[date] = None
+
+
+class EmployeeUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    job_title: Optional[str] = None
+    is_manager: Optional[bool] = None
+
+
+class EmployeeRead(EmployeeBase, ORMModel):
+    employee_id: int
+    user_id: int
+    hired_date: date
+
+
+# ===========================================================================
+# ACCOUNT SCHEMAS
+# ===========================================================================
+
+class AccountBase(BaseModel):
+    first_name: str
+    last_name: str
+    address_line1: str
+    city: str
+    state_province: str
+    postal_code: str
+    monthly_service_fee: Decimal
+    adp_country_country_code: str
+
+
+class AccountCreate(AccountBase):
+    adp_user_user_id: int
+    opened_date: Optional[date] = None
+
+
+class AccountUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code: Optional[str] = None
+    monthly_service_fee: Optional[Decimal] = None
+
+
+class AccountRead(AccountBase, ORMModel):
+    account_id: int
+    adp_user_user_id: int
+    opened_date: date
+
+
+# ===========================================================================
+# REFERENCE TABLE SCHEMAS (Country, Language, Genre)
+# ===========================================================================
+
+class CountryRead(ORMModel):
+    country_code: str
+    country_name: str
+
+
+class CountryCreate(BaseModel):
+    country_code: str
+    country_name: str
+
+
+class LanguageRead(ORMModel):
+    language_code: str
+    language_name: str
+
+
+class LanguageCreate(BaseModel):
+    language_code: str
+    language_name: str
+
+
+class GenreRead(ORMModel):
+    type_code: str
+    type_name: str
+
+
+class GenreCreate(BaseModel):
+    type_code: str
+    type_name: str
+
+
+# ===========================================================================
+# EPISODE SCHEMAS
+# ===========================================================================
+
+class EpisodeBase(BaseModel):
     episode_number: int
     title: str
     synopsis: Optional[str] = None
     runtime_minutes: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+
+class EpisodeCreate(EpisodeBase):
+    adp_series_series_id: int
+    total_viewers: int = 0
+    tech_interrupt_yn: str = 'N'
 
 
-class SeriesListItem(BaseModel):
-    series_id: int
+class EpisodeUpdate(BaseModel):
+    episode_number: Optional[int] = None
+    title: Optional[str] = None
+    synopsis: Optional[str] = None
+    runtime_minutes: Optional[int] = None
+    total_viewers: Optional[int] = None
+    tech_interrupt_yn: Optional[str] = None
+
+
+class EpisodeRead(EpisodeBase, ORMModel):
+    episode_id: int
+    adp_series_series_id: int
+    total_viewers: int
+    tech_interrupt_yn: str
+
+
+# ===========================================================================
+# SERIES SCHEMAS
+# ===========================================================================
+
+class SeriesBase(BaseModel):
     name: str
-    poster_url: Optional[str] = None
-    maturity_rating: Optional[str] = None
-    origin_country: Optional[str] = None
-    release_date: Optional[date] = None
-    language_code: Optional[str] = None
-    avg_rating: Optional[float] = None
-
-    class Config:
-        from_attributes = True
-
-
-class SeriesDetail(BaseModel):
-    series_id: int
-    name: str
-    description: Optional[str] = None
-    maturity_rating: Optional[str] = None
-    poster_url: Optional[str] = None
-    banner_url: Optional[str] = None
-    release_date: Optional[date] = None
-    origin_country: Optional[str] = None
-    num_episodes: Optional[int] = None
-    language_code: Optional[str] = None
-    genres: List[str] = []
-    dub_languages: List[str] = []
-    sub_languages: List[str] = []
-    avg_rating: Optional[float] = None
-    rating_count: int = 0
-    episodes: List[Episode] = []
-
-    class Config:
-        from_attributes = True
-
-
-class SeriesCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-    maturity_rating: Optional[str] = None
-    poster_url: Optional[str] = None
-    banner_url: Optional[str] = None
+    num_episodes: int = 0
     release_date: date
-    origin_country: str = Field(..., min_length=1, max_length=100)
-    language_code: str = Field(..., min_length=2, max_length=5)
-    num_episodes: Optional[int] = 0
-    genre_codes: List[str] = []
-    dub_language_codes: List[str] = []
-    sub_language_codes: List[str] = []
+    adp_language_language_code: str
+    origin_country: str
+    description: Optional[str] = None
+    maturity_rating: Optional[str] = None
+    poster_url: Optional[str] = None
+    banner_url: Optional[str] = None
+
+
+class SeriesCreate(SeriesBase):
+    genre_codes: Optional[List[str]] = []
+    dub_language_codes: Optional[List[str]] = []
+    sub_language_codes: Optional[List[str]] = []
 
 
 class SeriesUpdate(BaseModel):
     name: Optional[str] = None
+    num_episodes: Optional[int] = None
+    release_date: Optional[date] = None
+    adp_language_language_code: Optional[str] = None
+    origin_country: Optional[str] = None
     description: Optional[str] = None
     maturity_rating: Optional[str] = None
     poster_url: Optional[str] = None
     banner_url: Optional[str] = None
-    release_date: Optional[date] = None
+
+
+class SeriesListItem(ORMModel):
+    series_id: int
+    name: str
+    poster_url: Optional[str] = None
+    maturity_rating: Optional[str] = None
     origin_country: Optional[str] = None
+    release_date: Optional[date] = None
     language_code: Optional[str] = None
-    num_episodes: Optional[int] = None
+    average_rating: Optional[float] = None
+    rating_count: int = 0
 
 
-# ============================================================================
+class SeriesDetail(ORMModel):
+    series_id: int
+    name: str
+    num_episodes: int
+    release_date: date
+    language_code: Optional[str] = None
+    origin_country: str
+    description: Optional[str] = None
+    maturity_rating: Optional[str] = None
+    poster_url: Optional[str] = None
+    banner_url: Optional[str] = None
+    average_rating: Optional[float] = None
+    rating_count: int = 0
+    genres: List[str] = []
+    dub_languages: List[str] = []
+    sub_languages: List[str] = []
+    episodes: List[EpisodeRead] = []
+
+
+# ===========================================================================
 # FEEDBACK SCHEMAS
-# ============================================================================
+# ===========================================================================
 
 class FeedbackCreate(BaseModel):
-    rating: int = Field(..., ge=1, le=5)
+    rating: int  # 1-5
     feedback_text: Optional[str] = None
 
 
-class FeedbackItem(BaseModel):
+class FeedbackItem(ORMModel):
     account_id: int
     account_name: Optional[str] = None
     rating: int
     feedback_text: Optional[str] = None
-    feedback_date: date
-
-    class Config:
-        from_attributes = True
+    feedback_date: Optional[date] = None
 
 
 class FeedbackListResponse(BaseModel):
@@ -157,51 +312,167 @@ class FeedbackListResponse(BaseModel):
     items: List[FeedbackItem] = []
 
 
-# ============================================================================
+# ===========================================================================
 # WATCHLIST SCHEMAS
-# ============================================================================
+# ===========================================================================
 
-class WatchlistItem(BaseModel):
+class WatchlistItem(ORMModel):
     series_id: int
     series_name: str
     poster_url: Optional[str] = None
-    added_at: datetime
-
-    class Config:
-        from_attributes = True
+    added_at: Optional[datetime] = None
 
 
-# ============================================================================
+# ===========================================================================
 # VIEW HISTORY SCHEMAS
-# ============================================================================
+# ===========================================================================
 
 class ViewHistoryCreate(BaseModel):
-    watch_status: str = Field(..., pattern="^(STARTED|IN_PROGRESS|FINISHED)$")
+    watch_status: str  # STARTED, IN_PROGRESS, FINISHED
 
 
-# ============================================================================
-# REFERENCE SCHEMAS
-# ============================================================================
-
-class LanguageItem(BaseModel):
-    language_code: str
-    language_name: str
-
-    class Config:
-        from_attributes = True
+class ViewHistoryItem(ORMModel):
+    view_id: int
+    episode_id: int
+    episode_title: Optional[str] = None
+    series_name: Optional[str] = None
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    watch_status: str
 
 
-class GenreItem(BaseModel):
-    type_code: str
-    type_name: str
+# ===========================================================================
+# SCHEDULE SCHEMAS
+# ===========================================================================
 
-    class Config:
-        from_attributes = True
+class ScheduleBase(BaseModel):
+    start_datetime: datetime
+    end_datetime: datetime
+    adp_episode_episode_id: int
 
 
-class CountryItem(BaseModel):
-    country_code: str
-    country_name: str
+class ScheduleCreate(ScheduleBase):
+    pass
 
-    class Config:
-        from_attributes = True
+
+class ScheduleUpdate(BaseModel):
+    start_datetime: Optional[datetime] = None
+    end_datetime: Optional[datetime] = None
+
+
+class ScheduleRead(ScheduleBase, ORMModel):
+    schedule_id: int
+    episode_title: Optional[str] = None
+    series_name: Optional[str] = None
+
+
+# ===========================================================================
+# PRODUCTION HOUSE SCHEMAS
+# ===========================================================================
+
+class ProductionHouseBase(BaseModel):
+    name: str
+    address_line1: str
+    city: str
+    state_province: str
+    postal_code: str
+    year_established: int
+    adp_country_country_code: str
+
+
+class ProductionHouseCreate(ProductionHouseBase):
+    pass
+
+
+class ProductionHouseUpdate(BaseModel):
+    name: Optional[str] = None
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code: Optional[str] = None
+    year_established: Optional[int] = None
+
+
+class ProductionHouseRead(ProductionHouseBase, ORMModel):
+    house_id: int
+
+
+# ===========================================================================
+# PRODUCER SCHEMAS
+# ===========================================================================
+
+class ProducerBase(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    address_line1: str
+    city: str
+    state_province: str
+    postal_code: str
+    adp_country_country_code: str
+
+
+class ProducerCreate(ProducerBase):
+    pass
+
+
+class ProducerUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code: Optional[str] = None
+
+
+class ProducerRead(ProducerBase, ORMModel):
+    producer_id: int
+
+
+# ===========================================================================
+# CONTRACT SCHEMAS
+# ===========================================================================
+
+class ContractBase(BaseModel):
+    contract_start_date: date
+    contract_end_date: date
+    per_episode_charge: Decimal
+    status: str  # ACTIVE, COMPLETED, TERMINATED
+    adp_series_series_id: int
+    adp_production_house_house_id: int
+
+
+class ContractCreate(ContractBase):
+    pass
+
+
+class ContractUpdate(BaseModel):
+    contract_start_date: Optional[date] = None
+    contract_end_date: Optional[date] = None
+    per_episode_charge: Optional[Decimal] = None
+    status: Optional[str] = None
+
+
+class ContractRead(ContractBase, ORMModel):
+    contract_id: int
+    series_name: Optional[str] = None
+    production_house_name: Optional[str] = None
+
+
+# ===========================================================================
+# GENERIC RESPONSES
+# ===========================================================================
+
+class MessageResponse(BaseModel):
+    detail: str
+
+
+class PaginatedResponse(BaseModel):
+    items: List
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

@@ -1,19 +1,21 @@
 # app/config.py
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
-    
-    DATABASE_URL: str = "postgresql://user:pass@localhost/db"
-    SECRET_KEY: str = "your-secret-key-change-in-production"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    # Database
+    DATABASE_URL: str
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # JWT settings
+    SECRET_KEY: str = "super-secret-change-me-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    # Password reset token expiry (in hours)
+    PASSWORD_RESET_EXPIRE_HOURS: int = 24
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()
