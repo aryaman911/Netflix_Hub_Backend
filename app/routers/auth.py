@@ -1,80 +1,35 @@
 # app/routers/auth.py
 
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import (
-    OAuth2PasswordRequestForm,
-    OAuth2PasswordBearer,
-)
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.config import settings
+from app.auth import (
+    get_password_hash,
+    authenticate_user,
+    create_access_token,
+    get_user_by_identifier,
+)
+from app.models import ADPUserRole, ADPRole
 
-router = APIRouter(prefix="/auth", tags=["auth"])
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-
-# --------- helper functions --------- #
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    if not hashed_password:
-        return False
-    return pwd_context.verify(plain_password, hashed_password)
+# FIXED: Removed prefix="/auth" - it's now set in main.py only
+router = APIRouter()
 
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def get_user_by_email_or_username(
-    db: Session, identifier: str
-) -> Optional[models.ADPUser]:
-    """
-    Look up a user by either email or username.
-    """
-    return (
-        db.query(models.ADPUser)
-        .filter(
-            (models.ADPUser.email == identifier)
-            | (models.ADPUser.username == identifier)
-        )
-        .first()
+def get_user_roles(db: Session, user_id: int) -> List[str]:
+    """Get role codes for a user."""
+    roles = (
+        db.query(ADPUserRole, ADPRole)
+        .join(ADPRole, ADPRole.role_code == ADPUserRole.role_code)
+        .filter(ADPUserRole.user_id == user_id)
+        .all()
     )
-
-
-def authenticate_user(
-    db: Session, identifier: str, password: str
-) -> Optional[models.ADPUser]:
-    user = get_user_by_email_or_username(db, identifier)
-    if not user:
-        return None
-    if not verify_password(password, user.password_hash):
-        return None
-    return user
-
-
-def create_access_token(
-    data: dict, expires_delta: Optional[timedelta] = None
-) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (
-        expires_delta
-        if expires_delta is not None
-        else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(
-        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
-    )
-    return encoded_jwt
+    return [r.ADPRole.role_code for r in roles]
 
 
 # --------- routes --------- #
@@ -90,41 +45,52 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     Username OR email must be unique.
     """
     # Check existing by email or username
-    if get_user_by_email_or_username(db, user_in.email) or get_user_by_email_or_username(
-        db, user_in.username
-    ):
+    if get_user_by_identifier(db, user_in.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username or email already registered",
+            detail="Email already registered",
+        )
+    if get_user_by_identifier(db, user_in.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken",
         )
 
+    # Generate next user_id
+    from sqlalchemy import func
+    max_id = db.query(func.max(models.ADPUser.user_id)).scalar()
+    next_id = (max_id or 0) + 1
+
     user = models.ADPUser(
+        user_id=next_id,
         username=user_in.username,
         email=user_in.email,
         password_hash=get_password_hash(user_in.password),
+        is_active=True,
+        created_at=datetime.utcnow(),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    # Map ADPUser -> UserRead
     return schemas.UserRead(
         id=user.user_id,
         username=user.username,
         email=user.email,
-        role="user",      # default role for now
-        is_active=True,   # ADPUser has no flag, so assume active
     )
 
 
-@router.post("/login", response_model=schemas.Token)
+@router.post("/login", response_model=schemas.TokenWithUser)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
     """
     Login with either email or username (form_data.username)
-    and password. Returns a JWT access token.
+    and password. Returns a JWT access token plus user info.
+    
+    NOTE: OAuth2PasswordRequestForm expects form data (x-www-form-urlencoded),
+    not JSON. The frontend must send data as FormData or URLSearchParams.
     """
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
@@ -134,32 +100,23 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token({"sub": user.username})
-    # schemas.Token has access_token + token_type; extra fields are ignored
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Update last login
+    user.last_login_at = datetime.utcnow()
+    db.commit()
 
+    # Get user roles
+    roles = get_user_roles(db, user.user_id)
 
-# Dependency to get the current user from the token, usable in other routers
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> models.ADPUser:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+    # Create token with user_id and roles embedded
+    access_token = create_access_token({
+        "sub": str(user.user_id),
+        "roles": roles
+    })
 
-    user = get_user_by_email_or_username(db, username)
-    if user is None:
-        raise credentials_exception
-    return user
+    # FIXED: Return user_id and roles so frontend can store them
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user.user_id,
+        "roles": roles,
+    }

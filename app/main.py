@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from app.routers import auth, series
+from app.routers import auth, series, episodes, feedback, watchlist
 
 
 # -------------------------------------
@@ -27,11 +27,12 @@ app = FastAPI(
 # CORS Configuration
 # -------------------------------------
 origins = [
-    "https://aryaman911.github.io",   # your GitHub Pages root
-    "https://aryaman911.github.io/Netflix_Hub",  # repo pages
-    "http://localhost:5500",          # local file-server testing
+    "https://aryaman911.github.io",              # GitHub Pages root
+    "https://aryaman911.github.io/Netflix_Hub",  # FIXED: corrected repo name
+    "http://localhost:5500",                     # VS Code Live Server
     "http://127.0.0.1:5500",
     "http://localhost:8000",
+    "http://localhost:3000",                     # React dev server (if used)
 ]
 
 app.add_middleware(
@@ -53,9 +54,13 @@ def health_check():
 
 # -------------------------------------
 # Register Routers
+# FIXED: Removed duplicate prefixes - routers no longer have their own prefix
 # -------------------------------------
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(series.router, prefix="/series", tags=["series"])
+app.include_router(episodes.router, prefix="/episodes", tags=["episodes"])
+app.include_router(feedback.router, tags=["feedback"])  # has dynamic prefix /series/{id}/feedback
+app.include_router(watchlist.router, prefix="/me/watchlist", tags=["watchlist"])
 
 
 # -------------------------------------

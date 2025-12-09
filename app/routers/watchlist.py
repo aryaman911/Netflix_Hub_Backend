@@ -1,15 +1,17 @@
+# app/routers/watchlist.py
+
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ADPWatchlist, ADPAccount, ADPSeries
+from app.models import ADPWatchlist, ADPAccount, ADPSeries, ADPUser
 from app.schemas import WatchlistItem
 from app.deps import get_current_user
-from app.models import ADPUser
 
-router = APIRouter(prefix="/me/watchlist", tags=["watchlist"])
+# FIXED: Removed prefix="/me/watchlist" - it's now set in main.py only
+router = APIRouter()
 
 
 def _get_account_for_user(db: Session, user_id: int) -> ADPAccount:
@@ -24,6 +26,7 @@ def get_watchlist(
     db: Session = Depends(get_db),
     user: ADPUser = Depends(get_current_user),
 ):
+    """Get the current user's watchlist."""
     account = _get_account_for_user(db, user.user_id)
 
     rows = (
@@ -52,6 +55,7 @@ def add_to_watchlist(
     db: Session = Depends(get_db),
     user: ADPUser = Depends(get_current_user),
 ):
+    """Add a series to the user's watchlist."""
     account = _get_account_for_user(db, user.user_id)
     series = db.query(ADPSeries).filter(ADPSeries.series_id == series_id).first()
     if not series:
@@ -82,6 +86,7 @@ def remove_from_watchlist(
     db: Session = Depends(get_db),
     user: ADPUser = Depends(get_current_user),
 ):
+    """Remove a series from the user's watchlist."""
     account = _get_account_for_user(db, user.user_id)
     existing = (
         db.query(ADPWatchlist)

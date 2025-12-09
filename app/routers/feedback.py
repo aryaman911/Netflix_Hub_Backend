@@ -1,15 +1,19 @@
+# app/routers/feedback.py
+
 from datetime import date
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import get_db
-from app.models import ADPFeedback, ADPAccount, ADPSeries
-from app.schemas import FeedbackCreate, FeedbackItem
+from app.models import ADPFeedback, ADPAccount, ADPSeries, ADPUser
+from app.schemas import FeedbackCreate, FeedbackItem, FeedbackListResponse
 from app.deps import get_current_user
-from app.models import ADPUser
 
+# FIXED: This router uses a dynamic path, so we keep the prefix here
+# It will be mounted at root level in main.py
 router = APIRouter(prefix="/series/{series_id}/feedback", tags=["feedback"])
 
 
@@ -27,6 +31,7 @@ def add_feedback(
     db: Session = Depends(get_db),
     user: ADPUser = Depends(get_current_user),
 ):
+    """Add or update feedback for a series."""
     if payload.rating < 1 or payload.rating > 5:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
@@ -69,23 +74,44 @@ def add_feedback(
     )
 
 
-@router.get("/", response_model=List[FeedbackItem])
+@router.get("/", response_model=FeedbackListResponse)
 def list_feedback(
     series_id: int,
     db: Session = Depends(get_db),
 ):
-    rows = (
-        db.query(ADPFeedback)
+    """List all feedback for a series with summary stats."""
+    # Get average and count
+    stats = (
+        db.query(
+            func.avg(ADPFeedback.rating).label("avg"),
+            func.count(ADPFeedback.rating).label("count")
+        )
         .filter(ADPFeedback.adp_series_series_id == series_id)
+        .first()
+    )
+
+    rows = (
+        db.query(ADPFeedback, ADPAccount)
+        .join(ADPAccount, ADPAccount.account_id == ADPFeedback.adp_account_account_id)
+        .filter(ADPFeedback.adp_series_series_id == series_id)
+        .order_by(ADPFeedback.feedback_date.desc())
         .all()
     )
 
-    return [
-        FeedbackItem(
-            account_id=row.adp_account_account_id,
-            rating=row.rating,
-            feedback_text=row.feedback_text,
-            feedback_date=row.feedback_date,
+    items = []
+    for fb, account in rows:
+        items.append(
+            FeedbackItem(
+                account_id=fb.adp_account_account_id,
+                account_name=f"{account.first_name} {account.last_name}",
+                rating=fb.rating,
+                feedback_text=fb.feedback_text,
+                feedback_date=fb.feedback_date,
+            )
         )
-        for row in rows
-    ]
+
+    return FeedbackListResponse(
+        average_rating=float(stats.avg) if stats.avg else None,
+        rating_count=stats.count or 0,
+        items=items,
+    )

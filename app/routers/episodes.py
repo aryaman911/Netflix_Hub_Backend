@@ -1,13 +1,15 @@
+# app/routers/episodes.py
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ADPViewHistory, ADPEpisode, ADPAccount
+from app.models import ADPViewHistory, ADPEpisode, ADPAccount, ADPUser
 from app.schemas import ViewHistoryCreate
 from app.deps import get_current_user
-from app.models import ADPUser
 
-router = APIRouter(prefix="/episodes", tags=["episodes"])
+# FIXED: Removed prefix="/episodes" - it's now set in main.py only
+router = APIRouter()
 
 
 def _get_account_for_user(db: Session, user_id: int) -> ADPAccount:
@@ -24,6 +26,7 @@ def record_view(
     db: Session = Depends(get_db),
     user: ADPUser = Depends(get_current_user),
 ):
+    """Record that a user viewed an episode."""
     if payload.watch_status not in ("STARTED", "IN_PROGRESS", "FINISHED"):
         raise HTTPException(status_code=400, detail="Invalid watch status")
 

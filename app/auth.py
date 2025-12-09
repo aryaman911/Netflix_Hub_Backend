@@ -1,6 +1,5 @@
 # app/auth.py
 
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -14,16 +13,11 @@ from sqlalchemy import or_
 
 from app import models
 from app.database import get_db
+from app.config import settings  # FIXED: use settings from config.py
 
 # --------------------------------------------------------------------
-# JWT / security configuration
+# JWT / security configuration - FIXED: use settings object
 # --------------------------------------------------------------------
-
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
-ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(
-    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
-)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -32,8 +26,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 class TokenData(BaseModel):
-    # user id as string (subject)
-    sub: Optional[str] = None
+    user_id: int  # FIXED: store user_id directly
 
 
 # --------------------------------------------------------------------
@@ -42,6 +35,8 @@ class TokenData(BaseModel):
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Return True if `plain_password` matches `hashed_password`."""
+    if not hashed_password:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -63,37 +58,37 @@ def create_access_token(
     expire = datetime.utcnow() + (
         expires_delta
         if expires_delta is not None
-        else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
-def create_access_token_for_user(user: models.ADPUser) -> str:
+def create_access_token_for_user(user: models.ADPUser, roles: list[str] = None) -> str:
     """
     Convenience helper: create a token for a given user.
-    Encodes the user_id as the `sub` (subject) claim.
+    Encodes the user_id and roles in the token.
     """
-    return create_access_token({"sub": str(user.user_id)})
+    return create_access_token({
+        "sub": str(user.user_id),
+        "roles": roles or []
+    })
 
 
-def decode_token(token: str, credentials_exception: HTTPException) -> TokenData:
+def decode_token(token: str) -> TokenData:
     """
     Decode a JWT and return TokenData.
-
-    This is used by deps.py (and can be used by other modules) to
-    centralize token decoding logic.
+    Raises ValueError if token is invalid.
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        sub: str | None = payload.get("sub")
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        sub = payload.get("sub")
         if sub is None:
-            raise credentials_exception
-        return TokenData(sub=sub)
-    except JWTError:
-        # Any JWT error -> invalid credentials
-        raise credentials_exception
+            raise ValueError("Invalid token: missing subject")
+        return TokenData(user_id=int(sub))
+    except JWTError as e:
+        raise ValueError(f"Invalid token: {e}")
 
 
 # --------------------------------------------------------------------
@@ -106,7 +101,6 @@ def get_user_by_identifier(
 ) -> Optional[models.ADPUser]:
     """
     Fetch a user either by email or username.
-
     `identifier` is whatever the user typed in the login form.
     """
     return (
@@ -155,11 +149,12 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Use the shared decode_token helper so deps.py and routes match behaviour
-    token_data = decode_token(token, credentials_exception)
+    try:
+        token_data = decode_token(token)
+    except ValueError:
+        raise credentials_exception
 
-    # Load the user from the DB based on user_id in `sub`
-    user = db.query(models.ADPUser).get(int(token_data.sub))
+    user = db.query(models.ADPUser).filter(models.ADPUser.user_id == token_data.user_id).first()
     if user is None:
         raise credentials_exception
     return user
