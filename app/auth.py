@@ -66,7 +66,6 @@ def create_access_token(
         else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire})
-
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -79,6 +78,24 @@ def create_access_token_for_user(user: models.ADPUser) -> str:
     return create_access_token({"sub": str(user.user_id)})
 
 
+def decode_token(token: str, credentials_exception: HTTPException) -> TokenData:
+    """
+    Decode a JWT and return TokenData.
+
+    This is used by deps.py (and can be used by other modules) to
+    centralize token decoding logic.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        sub: str | None = payload.get("sub")
+        if sub is None:
+            raise credentials_exception
+        return TokenData(sub=sub)
+    except JWTError:
+        # Any JWT error -> invalid credentials
+        raise credentials_exception
+
+
 # --------------------------------------------------------------------
 # User lookup / authentication
 # --------------------------------------------------------------------
@@ -89,6 +106,7 @@ def get_user_by_identifier(
 ) -> Optional[models.ADPUser]:
     """
     Fetch a user either by email or username.
+
     `identifier` is whatever the user typed in the login form.
     """
     return (
@@ -137,18 +155,11 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        sub: str | None = payload.get("sub")
-        if sub is None:
-            raise credentials_exception
-        token_data = TokenData(sub=sub)
-    except JWTError:
-        raise credentials_exception
+    # Use the shared decode_token helper so deps.py and routes match behaviour
+    token_data = decode_token(token, credentials_exception)
 
     # Load the user from the DB based on user_id in `sub`
     user = db.query(models.ADPUser).get(int(token_data.sub))
     if user is None:
         raise credentials_exception
-
     return user
