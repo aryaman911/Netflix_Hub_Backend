@@ -1,12 +1,16 @@
 # app/routers/auth.py
+#
+# UPDATED: Signup now creates both ADPUser AND linked ADPAccount
 
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from typing import List
 from uuid import uuid4
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 from sqlalchemy import func
 
 from app import models, schemas
@@ -24,12 +28,21 @@ router = APIRouter()
 
 
 # -------------------------------------------------------------------------
-# SIGNUP
+# SIGNUP - Creates User AND linked Account
 # -------------------------------------------------------------------------
 
 @router.post("/signup", response_model=schemas.UserRead, status_code=status.HTTP_201_CREATED)
 def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
-    """Create a new user account."""
+    """
+    Create a new user account with linked ADP account.
+    
+    This creates:
+    1. ADPUser record (for authentication)
+    2. ADPAccount record (for user profile/address info)
+    3. ADPUserRole record (assigns USER role)
+    
+    Uses FOR UPDATE to safely generate IDs.
+    """
     # Check if email exists
     if get_user_by_identifier(db, user_in.email):
         raise HTTPException(
@@ -43,34 +56,81 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="Username already taken",
         )
 
-    # Generate next user_id
-    max_id = db.query(func.max(models.ADPUser.user_id)).scalar()
-    next_id = (max_id or 0) + 1
+    # Validate country code exists
+    country = db.query(models.ADPCountry).filter(
+        models.ADPCountry.country_code == user_in.country_code
+    ).first()
+    if not country:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid country code: {user_in.country_code}",
+        )
 
-    user = models.ADPUser(
-        user_id=next_id,
-        username=user_in.username,
-        email=user_in.email,
-        password_hash=get_password_hash(user_in.password),
-        is_active=True,
-        created_at=datetime.utcnow(),
-    )
-    db.add(user)
+    try:
+        # Generate next user_id with locking
+        max_user_id = (
+            db.query(func.max(models.ADPUser.user_id))
+            .with_for_update(nowait=False)
+            .scalar()
+        )
+        next_user_id = (max_user_id or 0) + 1
 
-    # Assign default USER role if it exists
-    user_role = db.query(models.ADPRole).filter(models.ADPRole.role_code == "USER").first()
-    if user_role:
-        db.add(models.ADPUserRole(user_id=next_id, role_code="USER"))
+        # Create user
+        user = models.ADPUser(
+            user_id=next_user_id,
+            username=user_in.username,
+            email=user_in.email,
+            password_hash=get_password_hash(user_in.password),
+            is_active=True,
+            created_at=datetime.utcnow(),
+        )
+        db.add(user)
 
-    db.commit()
-    db.refresh(user)
+        # Assign default USER role if it exists
+        user_role = db.query(models.ADPRole).filter(models.ADPRole.role_code == "USER").first()
+        if user_role:
+            db.add(models.ADPUserRole(user_id=next_user_id, role_code="USER"))
 
-    return schemas.UserRead(
-        id=user.user_id,
-        username=user.username,
-        email=user.email,
-        is_active=user.is_active,
-    )
+        # Generate next account_id with locking
+        max_account_id = (
+            db.query(func.max(models.ADPAccount.account_id))
+            .with_for_update(nowait=False)
+            .scalar()
+        )
+        next_account_id = (max_account_id or 0) + 1
+
+        # Create linked account
+        account = models.ADPAccount(
+            account_id=next_account_id,
+            first_name=user_in.first_name,
+            last_name=user_in.last_name,
+            address_line1=user_in.address_line1,
+            city=user_in.city,
+            state_province=user_in.state_province,
+            postal_code=user_in.postal_code,
+            opened_date=date.today(),
+            monthly_service_fee=Decimal("9.99"),  # Default subscription fee
+            adp_country_country_code=user_in.country_code,
+            adp_user_user_id=next_user_id,  # Link to user
+        )
+        db.add(account)
+
+        db.commit()
+        db.refresh(user)
+
+        return schemas.UserRead(
+            id=user.user_id,
+            username=user.username,
+            email=user.email,
+            is_active=user.is_active,
+        )
+
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Database busy. Please try again.",
+        )
 
 
 # -------------------------------------------------------------------------
@@ -171,7 +231,6 @@ def request_password_reset(
     db.commit()
 
     # In production, send email with token here
-    # For now, we'll just return success
     return {"message": "If the email exists, a reset link has been sent."}
 
 

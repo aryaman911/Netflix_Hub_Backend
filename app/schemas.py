@@ -1,4 +1,6 @@
-# app/schemas.py
+# app/schemas.py - UserCreate with account fields
+#
+# UPDATED: UserCreate now includes all fields needed for ADPAccount
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -27,7 +29,19 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
+    """
+    Schema for user signup.
+    Includes all fields needed to create both ADPUser AND ADPAccount.
+    """
     password: str
+    # Account fields (linked to ADPAccount)
+    first_name: str
+    last_name: str
+    address_line1: str
+    city: str
+    state_province: str
+    postal_code: str
+    country_code: str  # FK to adp_country
 
 
 class UserRead(UserBase):
