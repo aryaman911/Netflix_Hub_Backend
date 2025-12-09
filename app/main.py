@@ -1,16 +1,38 @@
+# app/main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, series, feedback, watchlist, episodes
+from app.database import Base, engine
+from app.routers import auth, series, admin, feedback
 
-app = FastAPI(title="MovieHub Backend (Supabase / ADP)")
 
-# Adjust origins based on your frontend URLs
+# -------------------------------------
+# Database Initialization
+# -------------------------------------
+# Creates all tables at startup if they do not exist
+Base.metadata.create_all(bind=engine)
+
+
+# -------------------------------------
+# FastAPI App Config
+# -------------------------------------
+app = FastAPI(
+    title="Netflix Hub API",
+    version="1.0.0",
+    description="Backend API for Netflix Hub (Movie Streaming App)"
+)
+
+
+# -------------------------------------
+# CORS Configuration
+# -------------------------------------
+# GitHub Pages frontend must be allowed!
 origins = [
-    "http://localhost:5173",
-    "http://localhost:5500",
-    "https://<your-username>.github.io",
-    "https://<your-username>.github.io/Netflix_Hub",
+    "https://aryaman911.github.io",   # your GitHub Pages site
+    "http://localhost:5500",          # local testing
+    "http://127.0.0.1:5500",
+    "http://localhost:8000",
 ]
 
 app.add_middleware(
@@ -21,13 +43,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(series.router)
-app.include_router(feedback.router)
-app.include_router(watchlist.router)
-app.include_router(episodes.router)
+
+# -------------------------------------
+# Health Check Endpoint
+# -------------------------------------
+@app.get("/health", tags=["system"])
+def health_check():
+    return {"status": "ok"}
 
 
-@app.get("/")
+# -------------------------------------
+# Register Routers
+# -------------------------------------
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(series.router, prefix="/series", tags=["series"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
+
+
+# -------------------------------------
+# Root Endpoint
+# -------------------------------------
+@app.get("/", tags=["system"])
 def root():
-    return {"status": "ok", "message": "MovieHub backend is running"}
+    return {"message": "Netflix Hub API is running"}
