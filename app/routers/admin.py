@@ -30,7 +30,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class ProductionHouseCreate(BaseModel):
     name: str
     address_line1: str
-    address_line2: Optional[str] = None
+    
     city: str
     state_province: str
     postal_code: str
@@ -40,7 +40,7 @@ class ProductionHouseCreate(BaseModel):
 class ProductionHouseUpdate(BaseModel):
     name: Optional[str] = None
     address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
+    
     city: Optional[str] = None
     state_province: Optional[str] = None
     postal_code: Optional[str] = None
@@ -50,13 +50,12 @@ class ProductionHouseUpdate(BaseModel):
 class ProductionHouseResponse(BaseModel):
     house_id: int
     name: str
-    address_line1: str
-    address_line2: Optional[str]
-    city: str
-    state_province: str
-    postal_code: str
-    year_established: int
-    country_code: str
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code: Optional[str] = None
+    year_established: Optional[int] = None
+    country_code: Optional[str] = None
     country_name: Optional[str] = None
 
 # Producer
@@ -66,7 +65,7 @@ class ProducerCreate(BaseModel):
     email: str
     phone: str
     address_line1: str
-    address_line2: Optional[str] = None
+    
     city: str
     state_province: str
     postal_code: str
@@ -78,7 +77,7 @@ class ProducerUpdate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
+    
     city: Optional[str] = None
     state_province: Optional[str] = None
     postal_code: Optional[str] = None
@@ -88,14 +87,13 @@ class ProducerResponse(BaseModel):
     producer_id: int
     first_name: str
     last_name: str
-    email: str
-    phone: str
-    address_line1: str
-    address_line2: Optional[str]
-    city: str
-    state_province: str
-    postal_code: str
-    country_code: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code: Optional[str] = None
+    country_code: Optional[str] = None
     country_name: Optional[str] = None
 
 # Producer-House Assignment
@@ -197,7 +195,6 @@ async def list_production_houses(
             house_id=h.house_id,
             name=h.name,
             address_line1=h.address_line1,
-            address_line2=h.address_line2,
             city=h.city,
             state_province=h.state_province,
             postal_code=h.postal_code,
@@ -221,7 +218,6 @@ async def create_production_house(
         house_id=max_id + 1,
         name=data.name,
         address_line1=data.address_line1,
-        address_line2=data.address_line2,
         city=data.city,
         state_province=data.state_province,
         postal_code=data.postal_code,
@@ -237,7 +233,6 @@ async def create_production_house(
         house_id=house.house_id,
         name=house.name,
         address_line1=house.address_line1,
-        address_line2=house.address_line2,
         city=house.city,
         state_province=house.state_province,
         postal_code=house.postal_code,
@@ -262,8 +257,8 @@ async def update_production_house(
         house.name = data.name
     if data.address_line1 is not None:
         house.address_line1 = data.address_line1
-    if data.address_line2 is not None:
-        house.address_line2 = data.address_line2
+    if None is not None:
+        None = None
     if data.city is not None:
         house.city = data.city
     if data.state_province is not None:
@@ -283,7 +278,6 @@ async def update_production_house(
         house_id=house.house_id,
         name=house.name,
         address_line1=house.address_line1,
-        address_line2=house.address_line2,
         city=house.city,
         state_province=house.state_province,
         postal_code=house.postal_code,
@@ -333,7 +327,6 @@ async def list_producers(
             email=p.email,
             phone=p.phone,
             address_line1=p.address_line1,
-            address_line2=p.address_line2,
             city=p.city,
             state_province=p.state_province,
             postal_code=p.postal_code,
@@ -363,7 +356,6 @@ async def create_producer(
         email=data.email,
         phone=data.phone,
         address_line1=data.address_line1,
-        address_line2=data.address_line2,
         city=data.city,
         state_province=data.state_province,
         postal_code=data.postal_code,
@@ -381,7 +373,6 @@ async def create_producer(
         email=producer.email,
         phone=producer.phone,
         address_line1=producer.address_line1,
-        address_line2=producer.address_line2,
         city=producer.city,
         state_province=producer.state_province,
         postal_code=producer.postal_code,
@@ -414,8 +405,8 @@ async def update_producer(
         producer.phone = data.phone
     if data.address_line1 is not None:
         producer.address_line1 = data.address_line1
-    if data.address_line2 is not None:
-        producer.address_line2 = data.address_line2
+    if None is not None:
+        None = None
     if data.city is not None:
         producer.city = data.city
     if data.state_province is not None:
@@ -436,7 +427,6 @@ async def update_producer(
         email=producer.email,
         phone=producer.phone,
         address_line1=producer.address_line1,
-        address_line2=producer.address_line2,
         city=producer.city,
         state_province=producer.state_province,
         postal_code=producer.postal_code,
