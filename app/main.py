@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import auth, series, feedback, watchlist, reference
+from .routers import auth, series, feedback, watchlist, reference, admin
 
 app = FastAPI(title="Netflix Hub API", version="1.0.0")
 
@@ -20,6 +20,7 @@ app.include_router(series.router, prefix="/series", tags=["Series"])
 app.include_router(feedback.router, prefix="/series", tags=["Feedback"])
 app.include_router(watchlist.router, prefix="/me", tags=["Watchlist"])
 app.include_router(reference.router, prefix="/reference", tags=["Reference"])
+app.include_router(admin.router, tags=["Admin"])
 
 
 @app.get("/")
