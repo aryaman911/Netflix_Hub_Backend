@@ -257,8 +257,6 @@ async def update_production_house(
         house.name = data.name
     if data.address_line1 is not None:
         house.address_line1 = data.address_line1
-    if None is not None:
-        None = None
     if data.city is not None:
         house.city = data.city
     if data.state_province is not None:
@@ -405,8 +403,6 @@ async def update_producer(
         producer.phone = data.phone
     if data.address_line1 is not None:
         producer.address_line1 = data.address_line1
-    if None is not None:
-        None = None
     if data.city is not None:
         producer.city = data.city
     if data.state_province is not None:
