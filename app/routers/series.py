@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from ..database import get_db
-from ..models import ADPSeries, ADPSeriesGenre, ADPSeriesType, ADPEpisode
+from ..models import ADPSeries, ADPSeriesGenre, ADPSeriesType, ADPEpisode, ADPSeriesDub, ADPSeriesSub
 from ..schemas import SeriesCreate, SeriesUpdate, SeriesResponse, EpisodeResponse
 from ..deps import get_current_user, require_admin
 
@@ -26,6 +26,8 @@ def serialize_series(s: ADPSeries) -> dict:
         "avg_rating": float(s.average_rating) if s.average_rating else None,
         "rating_count": s.rating_count or 0,
         "genres": [g.type.type_name for g in s.genres if g.type],
+        "dub_languages": [d.language.language_name for d in s.dubs if d.language],
+        "sub_languages": [sub.language.language_name for sub in s.subs if sub.language],
         "episodes": [
             {
                 "episode_id": e.episode_id,
@@ -78,8 +80,8 @@ def create_series(
     admin = Depends(require_admin),
 ):
     try:
-        # Get next ID with lock
-        max_id = db.query(func.max(ADPSeries.series_id)).with_for_update().scalar()
+        # Get next ID
+        max_id = db.query(func.max(ADPSeries.series_id)).scalar()
         next_id = (max_id or 0) + 1
         
         series = ADPSeries(
@@ -119,10 +121,7 @@ def update_series(
     db: Session = Depends(get_db),
     admin = Depends(require_admin),
 ):
-    # Lock row for update
-    series = db.query(ADPSeries).filter(
-        ADPSeries.series_id == series_id
-    ).with_for_update().first()
+    series = db.query(ADPSeries).filter(ADPSeries.series_id == series_id).first()
     
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
@@ -173,9 +172,7 @@ def delete_series(
     db: Session = Depends(get_db),
     admin = Depends(require_admin),
 ):
-    series = db.query(ADPSeries).filter(
-        ADPSeries.series_id == series_id
-    ).with_for_update().first()
+    series = db.query(ADPSeries).filter(ADPSeries.series_id == series_id).first()
     
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")

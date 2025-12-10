@@ -94,6 +94,8 @@ class ADPSeries(Base):
     
     language = relationship("ADPLanguage")
     genres = relationship("ADPSeriesGenre", back_populates="series")
+    dubs = relationship("ADPSeriesDub", back_populates="series")
+    subs = relationship("ADPSeriesSub", back_populates="series")
     feedbacks = relationship("ADPFeedback", back_populates="series")
     watchlist_entries = relationship("ADPWatchlist", back_populates="series")
     episodes = relationship("ADPEpisode", back_populates="series")
@@ -117,6 +119,22 @@ class ADPSeriesGenre(Base):
     adp_series_type_type_code = Column(String, ForeignKey("adp_series_type.type_code"), primary_key=True)
     series = relationship("ADPSeries", back_populates="genres")
     type = relationship("ADPSeriesType")
+
+
+class ADPSeriesDub(Base):
+    __tablename__ = "adp_series_dub"
+    adp_series_series_id = Column(BigInteger, ForeignKey("adp_series.series_id"), primary_key=True)
+    adp_language_language_code = Column(String, ForeignKey("adp_language.language_code"), primary_key=True)
+    series = relationship("ADPSeries", back_populates="dubs")
+    language = relationship("ADPLanguage")
+
+
+class ADPSeriesSub(Base):
+    __tablename__ = "adp_series_sub"
+    adp_series_series_id = Column(BigInteger, ForeignKey("adp_series.series_id"), primary_key=True)
+    adp_language_language_code = Column(String, ForeignKey("adp_language.language_code"), primary_key=True)
+    series = relationship("ADPSeries", back_populates="subs")
+    language = relationship("ADPLanguage")
 
 
 class ADPFeedback(Base):

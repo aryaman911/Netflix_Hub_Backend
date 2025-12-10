@@ -97,6 +97,8 @@ class SeriesResponse(BaseModel):
     avg_rating: Optional[float]
     rating_count: int
     genres: List[str]
+    dub_languages: List[str] = []
+    sub_languages: List[str] = []
     episodes: List[EpisodeResponse] = []
 
     class Config:
