@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -24,7 +24,7 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Username already taken")
     
     try:
-        # Get next user_id
+        # Get next user_id (simple approach without FOR UPDATE on aggregate)
         max_user_id = db.query(func.max(ADPUser.user_id)).scalar()
         next_user_id = (max_user_id or 0) + 1
         
@@ -37,7 +37,7 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
             is_active=True,
         )
         db.add(user)
-        db.flush()
+        db.flush()  # Flush to catch any constraint violations early
         
         # Assign USER role
         user_role = ADPUserRole(user_id=next_user_id, role_code="USER")
@@ -47,7 +47,7 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         max_account_id = db.query(func.max(ADPAccount.account_id)).scalar()
         next_account_id = (max_account_id or 0) + 1
         
-        # Create account with all address details
+        # Create account
         account = ADPAccount(
             account_id=next_account_id,
             first_name=user_in.first_name,
