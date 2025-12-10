@@ -83,14 +83,14 @@ class ADPAccount(Base):
 class ADPProductionHouse(Base):
     __tablename__ = "adp_production_house"
     house_id = Column(BigInteger, primary_key=True)
-    name = Column(String(120), nullable=False)
-    address_line1 = Column(String(120), nullable=False)
-    address_line2 = Column(String(120))
-    city = Column(String(120), nullable=False)
-    state_province = Column(String(80), nullable=False)
-    postal_code = Column(String(20), nullable=False)
-    year_established = Column(Integer, nullable=False)
-    adp_country_country_code = Column(String(3), ForeignKey("adp_country.country_code"), nullable=False)
+    name = Column(String(255), nullable=False)
+    address_line1 = Column(String(255))
+    address_line2 = Column(String(255))
+    city = Column(String(100))
+    state_province = Column(String(100))
+    postal_code = Column(String(20))
+    year_established = Column(Integer)
+    adp_country_country_code = Column(String(10), ForeignKey("adp_country.country_code"))
     
     country = relationship("ADPCountry")
     contracts = relationship("ADPContract", back_populates="production_house")
@@ -100,16 +100,16 @@ class ADPProductionHouse(Base):
 class ADPProducer(Base):
     __tablename__ = "adp_producer"
     producer_id = Column(BigInteger, primary_key=True)
-    first_name = Column(String(80), nullable=False)
-    last_name = Column(String(80), nullable=False)
-    email = Column(String(120), nullable=False, unique=True)
-    phone = Column(String(25), nullable=False)
-    address_line1 = Column(String(120), nullable=False)
-    address_line2 = Column(String(120))
-    city = Column(String(80), nullable=False)
-    state_province = Column(String(80), nullable=False)
-    postal_code = Column(String(20), nullable=False)
-    adp_country_country_code = Column(String(3), ForeignKey("adp_country.country_code"), nullable=False)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    email = Column(String(255))
+    phone = Column(String(50))
+    address_line1 = Column(String(255))
+    address_line2 = Column(String(255))
+    city = Column(String(100))
+    state_province = Column(String(100))
+    postal_code = Column(String(20))
+    adp_country_country_code = Column(String(10), ForeignKey("adp_country.country_code"))
     
     country = relationship("ADPCountry")
     production_houses = relationship("ADPProducerHouse", back_populates="producer")
@@ -133,12 +133,11 @@ class ADPProducerHouse(Base):
 class ADPSeries(Base):
     __tablename__ = "adp_series"
     series_id = Column(BigInteger, primary_key=True)
-    name = Column(String(160), nullable=False)
-    num_episodes = Column(Integer, nullable=False, default=1)
-    release_date = Column(Date)
-    adp_language_language_code = Column(String(8), ForeignKey("adp_language.language_code"), nullable=False)
-    adp_country_country_code = Column(String(3), ForeignKey("adp_country.country_code"), nullable=False)
-    origin_country = Column(String(80))  # Kept for backward compatibility
+    name = Column(String(255), nullable=False)
+    num_episodes = Column(Integer, nullable=False, default=0)
+    release_date = Column(Date, nullable=False)
+    adp_language_language_code = Column(String(10), ForeignKey("adp_language.language_code"), nullable=False)
+    origin_country = Column(String(100), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     description = Column(Text)
@@ -149,7 +148,6 @@ class ADPSeries(Base):
     rating_count = Column(Integer, nullable=False, default=0)
     
     language = relationship("ADPLanguage")
-    country = relationship("ADPCountry")
     genres = relationship("ADPSeriesGenre", back_populates="series", cascade="all, delete-orphan")
     dubs = relationship("ADPSeriesDub", back_populates="series", cascade="all, delete-orphan")
     subs = relationship("ADPSeriesSub", back_populates="series", cascade="all, delete-orphan")
@@ -219,12 +217,12 @@ class ADPContract(Base):
     __tablename__ = "adp_contract"
     contract_id = Column(BigInteger, primary_key=True)
     contract_start_date = Column(Date, nullable=False)
-    contract_end_date = Column(Date, nullable=False)
-    per_episode_charge = Column(Numeric(10,2), nullable=False)
-    status = Column(String(12), nullable=False, default='ACTIVE')  # ACTIVE, EXPIRED, SUSPENDED
+    contract_end_date = Column(Date)
+    per_episode_charge = Column(Numeric(12,2))
+    status = Column(String(20))  # ACTIVE, COMPLETED, TERMINATED, EXPIRED, SUSPENDED
     adp_series_series_id = Column(BigInteger, ForeignKey("adp_series.series_id"), nullable=False)
-    adp_production_house_house_id = Column(BigInteger, ForeignKey("adp_production_house.house_id"), nullable=False)
-    renewed_from_id = Column(BigInteger, ForeignKey("adp_contract.contract_id"))  # Self-referencing FK
+    adp_production_house_house_id = Column(BigInteger, ForeignKey("adp_production_house.house_id"))
+    renewed_from_id = Column(BigInteger, ForeignKey("adp_contract.contract_id"))
     
     series = relationship("ADPSeries", back_populates="contracts")
     production_house = relationship("ADPProductionHouse", back_populates="contracts")
